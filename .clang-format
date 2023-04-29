@@ -18,11 +18,31 @@
 UseTab: Never
 TabWidth: '4'
 IndentWidth: '4'
-BasedOnStyle: Google
+BasedOnStyle: Microsoft
 AccessModifierOffset: -4
 ColumnLimit: 120
 NamespaceIndentation: All
 IndentPPDirectives: BeforeHash
 FixNamespaceComments: false
 
-...
+SpacesInSquareBrackets: true
+SpacesInParentheses: true
+CompactNamespaces: false
+PointerAlignment: Left
+
+SpaceAfterCStyleCast: true
+SpaceAfterLogicalNot: false
+SpaceAroundPointerQualifiers: Default
+SpaceBeforeCaseColon: false
+SpaceBeforeCpp11BracedList : false
+SpaceBeforeCtorInitializerColon: false
+SpaceBeforeInheritanceColon: false
+
+SpaceBeforeRangeBasedForLoopColon: true
+SpaceBeforeSquareBrackets: false
+SpaceInEmptyBlock: false
+SpaceInEmptyParentheses: false
+
+SpacesInCStyleCastParentheses: false
+SpacesInConditionalStatement: true
+SpacesInContainerLiterals: false
