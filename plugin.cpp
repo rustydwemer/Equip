@@ -17,15 +17,6 @@ SKSEPluginLoad( const SKSE::LoadInterface* _skse )
 }
 
 
-
-namespace Papyrus
-{
-    bool RegisterPapyrusFunctions( RE::BSScript::IVirtualMachine* _vm )
-    {
-        return true;
-    }
-}
-
 namespace Settings
 {
     const uint32_t Key1 = 0x02; // corresponds to key "1" on the keyboard
@@ -38,16 +29,39 @@ namespace Settings
     const uint32_t KeyF1 = 0x3b; // corresponds to key "F1" on the keyboard
     const uint32_t KeyF2 = 0x3c; // corresponds to key "F2" on the keyboard
 
+    const uint32_t RightHandQueueID     = 0;
+    const uint32_t LeftHandQueueID      = 1;
+    const uint32_t ShoutPowerQueueID    = 2;
+    const uint32_t AmmoQueueID          = 3;
+    const uint32_t PotionQueue1ID       = 4;
+    const uint32_t PotionQueue2ID       = 5;
 
-    uint32_t RightHandQueueRotationKey      = Key1;
-    uint32_t LeftHandQueueRotationKey       = Key2;
-    uint32_t ShoutPowerQueueRotationKey     = Key3;
-    uint32_t AmmoQueueRotationKey           = Key4;
-    uint32_t PotionQueue1RotationKey        = KeyF1;
-    uint32_t PotionQueue2RotationKey        = KeyF2;
+    constexpr const uint32_t GetQueuesCount()
+    {
+        return 6;
+    }
 
-    uint32_t PotionQueue1UseKey = Key5;
-    uint32_t PotionQueue2UseKey = Key6;
+    constexpr const uint32_t GetPotionQueuesCount()
+    {
+        return 2;
+    }
+
+    uint32_t QueuesRotationKeys[ GetQueuesCount() ];
+
+    uint32_t QueuesUseKeys[ GetPotionQueuesCount() ];
+
+    void Init()
+    {
+        QueuesRotationKeys[ RightHandQueueID ]  = Key1;
+        QueuesRotationKeys[ LeftHandQueueID ]   = Key2;
+        QueuesRotationKeys[ ShoutPowerQueueID ] = Key3;
+        QueuesRotationKeys[ AmmoQueueID ]       = Key4;
+        QueuesRotationKeys[ PotionQueue1ID ]    = KeyF1;
+        QueuesRotationKeys[ PotionQueue2ID ]    = KeyF2;
+
+        QueuesUseKeys[ 0 ] = Key5;
+        QueuesUseKeys[ 1 ] = Key6;
+    }
 }
 
 namespace GameDataCache
@@ -217,6 +231,16 @@ KeyEventSink* GetKeyEventSink()
     return &KESink;
 }
 
+
+namespace Papyrus
+{
+    bool RegisterPapyrusFunctions( RE::BSScript::IVirtualMachine* _vm )
+    {
+        return true;
+    }
+}
+
+
 void skseEventListener( SKSE::MessagingInterface::Message* _msg )
 {
     if ( _msg->type == SKSE::MessagingInterface::kDataLoaded )
@@ -224,6 +248,7 @@ void skseEventListener( SKSE::MessagingInterface::Message* _msg )
 
         GameDataCache::Init();
         GameUICache::Init();
+        Settings::Init();
 
         RE::BSInputDeviceManager* idm = RE::BSInputDeviceManager::GetSingleton();
         idm->AddEventSink( GetKeyEventSink() );
