@@ -33,8 +33,25 @@ namespace Settings
     const uint32_t LeftHandQueueID      = 1;
     const uint32_t ShoutPowerQueueID    = 2;
     const uint32_t AmmoQueueID          = 3;
-    const uint32_t PotionQueue1ID       = 4;
-    const uint32_t PotionQueue2ID       = 5;
+    const uint32_t Potion1QueueID       = 4;
+    const uint32_t Potion2QueueID       = 5;
+
+
+    #define DECLARE_DEFAULT_COORDINATE(COORDINATE, VALUE)\
+        int COORDINATE = VALUE;
+
+    #define DECLARE_DEFAULT_POSITION(QUEUE, IMAGE_POS_X, IMAGE_POS_Y, TEXT_POS_X, TEXT_POS_Y)\
+        DECLARE_DEFAULT_COORDINATE( QUEUE##ImagePosX,   IMAGE_POS_X )\
+        DECLARE_DEFAULT_COORDINATE( QUEUE##ImagePosY,   IMAGE_POS_Y )\
+        DECLARE_DEFAULT_COORDINATE( QUEUE##TextPosX,    TEXT_POS_X  )\
+        DECLARE_DEFAULT_COORDINATE( QUEUE##TextPosY,    TEXT_POS_Y  )
+
+    DECLARE_DEFAULT_POSITION( RightHand,  640, 360, 640, 480 )
+    DECLARE_DEFAULT_POSITION( LeftHand,   540, 360, 540, 480 )
+    DECLARE_DEFAULT_POSITION( ShoutPower, 590, 500, 640, 620 )
+    DECLARE_DEFAULT_POSITION( Ammo, 590, 500, 640, 620 )
+    DECLARE_DEFAULT_POSITION( Potion1, 590, 500, 640, 620 )
+    DECLARE_DEFAULT_POSITION( Potion2, 590, 500, 640, 620 )
 
     constexpr const uint32_t GetQueuesCount()
     {
@@ -56,8 +73,8 @@ namespace Settings
         QueuesRotationKeys[ LeftHandQueueID ]   = Key2;
         QueuesRotationKeys[ ShoutPowerQueueID ] = Key3;
         QueuesRotationKeys[ AmmoQueueID ]       = Key4;
-        QueuesRotationKeys[ PotionQueue1ID ]    = KeyF1;
-        QueuesRotationKeys[ PotionQueue2ID ]    = KeyF2;
+        QueuesRotationKeys[ Potion1QueueID ]    = KeyF1;
+        QueuesRotationKeys[ Potion2QueueID ]    = KeyF2;
 
         QueuesUseKeys[ 0 ] = Key5;
         QueuesUseKeys[ 1 ] = Key6;
@@ -146,6 +163,86 @@ namespace GameDataCache
 
 namespace Widgets
 {
+    struct WidgetData
+    {
+        int iWantWidgetImageID;
+        int iWantWidgetTextID;
+
+        int ImagePosX;
+        int ImagePosY;
+
+        int TextPosX;
+        int TextPosY;
+
+        std::string ImageName;
+        std::string Text;
+    };
+
+    WidgetData WidgetDatas[ Settings::GetQueuesCount() ];
+
+    #define INIT_WIDGETDATA(QUEUE)\
+        WidgetDatas[ Settings::##QUEUE##QueueID ].Text = "Empty";\
+        WidgetDatas[ Settings::##QUEUE##QueueID ].ImageName = "";\
+        WidgetDatas[ Settings::##QUEUE##QueueID ].ImagePosX = Settings::##QUEUE##ImagePosX;\
+        WidgetDatas[ Settings::##QUEUE##QueueID ].ImagePosY = Settings::##QUEUE##ImagePosY;\
+        WidgetDatas[ Settings::##QUEUE##QueueID ].TextPosX = Settings::##QUEUE##TextPosX;\
+        WidgetDatas[ Settings::##QUEUE##QueueID ].TextPosY = Settings::##QUEUE##TextPosY;
+
+
+    void Init()
+    {
+        INIT_WIDGETDATA( RightHand )
+        INIT_WIDGETDATA( LeftHand  )
+        INIT_WIDGETDATA( ShoutPower )
+        INIT_WIDGETDATA( Ammo )
+        INIT_WIDGETDATA( Potion1 )
+        INIT_WIDGETDATA( Potion1 )
+    }
+
+    const char* GetWeaponImageName( const RE::TESObjectWEAP* _weapon )
+    {
+        if ( _weapon->IsOneHandedSword() )
+            return "equip/gladius.dds";
+
+        if ( _weapon->IsTwoHandedSword() )
+            return "equip/broadsword.dds";
+
+        if ( _weapon->IsOneHandedDagger() )
+            return "equip/broad-dagger.dds";
+
+        if ( _weapon->IsOneHandedAxe() )
+            return "equip/fire-axe.dds";
+
+        if ( _weapon->IsOneHandedMace() )
+            return "equip/flanged-mace.dds";
+
+        if ( _weapon->IsTwoHandedAxe() )
+        {
+            if ( strstr( _weapon->GetName(), "Warhammer" ) )
+                return "equip/warhammer.dds";
+
+            return "equip/battle-axe.dds";
+        }
+
+        if ( _weapon->IsBow() )
+            return "equip/bow.dds";
+
+        if ( _weapon->IsCrossbow() )
+            return "equip/crossbow.dds";
+
+        return "equip/wood-axe.dds";
+    }
+    
+    const char* GetImageName( const RE::TESForm* _object )
+    {
+        if ( _object->IsWeapon() )
+            return GetWeaponImageName( _object->As<RE::TESObjectWEAP>() );
+
+        if ( _object->IsArmor() )
+            return Utils::IsShield( _object ) ? "equip/round-shield.dds" : "equip/cube.dds";
+
+        return "equip/cube.dds";
+    }
 }
 
 namespace GameUICache
@@ -195,7 +292,7 @@ namespace GameUICache
 
 namespace Utils
 {
-    bool IsWeaponTwoHanded( RE::TESObjectWEAP* _weapon )
+    bool IsWeaponTwoHanded( const RE::TESObjectWEAP* _weapon )
     {
         return !(
                         _weapon->IsOneHandedAxe()
@@ -206,7 +303,21 @@ namespace Utils
         );
     }
 
-    bool IsShield( RE::TESForm* _object )
+    bool IsTwoHanded( const RE::TESForm* _object )
+    {
+        if ( _object->IsWeapon() )
+            return IsWeaponTwoHanded( _object->As<RE::TESObjectWEAP>() );
+
+        if ( _object->Is( RE::FormType::Spell ) )
+            return _object->As<RE::SpellItem>()->IsTwoHanded();
+
+        if ( _object->Is( RE::FormType::Scroll ) )
+            return  _object->As<RE::ScrollItem>()->IsTwoHanded();
+
+        return false;
+    }
+
+    bool IsShield( const RE::TESForm* _object )
     {
         return _object->IsArmor() && _object->As<RE::TESObjectARMO>()->IsShield();
     }
@@ -674,6 +785,61 @@ namespace Queues
         QueueType m_type = QueueType::kInvalid;
         bool m_wasEmpty = true;
     };
+
+    Queue Queues[ Settings::GetQueuesCount() ];
+
+    void QueueUnqueueFromInventoryMenu( Queue& _queue )
+    {
+        RE::InventoryMenu* inventoryMenu = GameUICache::GetOpenedMenu<RE::InventoryMenu>( RE::InventoryMenu::MENU_NAME );
+        if ( inventoryMenu )
+        {
+            RE::ItemList* itemList = inventoryMenu->GetRuntimeData().itemList;
+            RE::TESBoundObject* selectedItem = GameUICache::GetSelectedItem( itemList );
+
+            _queue.queueUnqueue( selectedItem );
+        }
+    }
+
+    void QueueUnqueueFromMagicMenu( Queue& _queue )
+    {
+        RE::MagicMenu* magicMenu = GameUICache::GetOpenedMenu<RE::MagicMenu>( RE::MagicMenu::MENU_NAME );
+
+        if ( magicMenu )
+        {
+            RE::GFxValue result;
+            magicMenu->uiMovie->GetVariable( &result, "_root.Menu_mc.inventoryList.itemList.selectedEntry.formId" );
+            if ( result.GetType() != RE::GFxValue::ValueType::kNumber )
+                return;
+
+            uint32_t selectedFormId = (uint32_t) result.GetNumber();
+            RE::TESForm* form = RE::TESForm::LookupByID( selectedFormId );
+            if ( !form )
+                return;
+
+            _queue.queueUnqueue( form );
+        }
+    }
+
+    void Init()
+    {
+        Queues[ Settings::RightHandQueueID ].setType( Queue::QueueType::kRightHand );
+        Queues[ Settings::LeftHandQueueID ].setType( Queue::QueueType::kLeftHand );
+        Queues[ Settings::ShoutPowerQueueID ].setType( Queue::QueueType::kShoutOrPower );
+        Queues[ Settings::AmmoQueueID ].setType( Queue::QueueType::kAmmo );
+        Queues[ Settings::Potion1QueueID ].setType( Queue::QueueType::kPotion );
+        Queues[ Settings::Potion2QueueID ].setType( Queue::QueueType::kPotion );
+    }
+
+    //void UnequipFromOppositeQueueIfEquippingTwoHanded( Queue& _queue, Queue& _opppositeQueue )
+    //{
+    //    RE::TESForm* form = _queue.getNext();
+
+    //    if ( !form )
+    //        return;
+
+    //    if ( Utils::IsTwoHanded( form ) )
+    //        _opppositeQueue.unequipCurrent();
+    //}
 }
 
 class KeyEventSink: public RE::BSTEventSink<RE::InputEvent*>
@@ -728,6 +894,8 @@ void skseEventListener( SKSE::MessagingInterface::Message* _msg )
         GameDataCache::Init();
         GameUICache::Init();
         Settings::Init();
+        Queues::Init();
+        Widgets::Init();
 
         RE::BSInputDeviceManager* idm = RE::BSInputDeviceManager::GetSingleton();
         idm->AddEventSink( GetKeyEventSink() );
