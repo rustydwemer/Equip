@@ -322,7 +322,7 @@ namespace Utils
         return _object->IsArmor() && _object->As<RE::TESObjectARMO>()->IsShield();
     }
 
-    bool IsEquipableItem( RE::TESForm* _object )
+    bool IsEquipableItem( const RE::TESForm* _object )
     {
         return  _object->formType == RE::FormType::Weapon
             ||  IsShield( _object )
@@ -330,12 +330,12 @@ namespace Utils
             ||  _object->formType == RE::FormType::Scroll;
     }
 
-    bool IsEquipableSpell( RE::TESForm* _object )
+    bool IsEquipableSpell( const RE::TESForm* _object )
     {
         if ( !_object->Is( RE::FormType::Spell ) )
             return false;
 
-        RE::SpellItem* spell = _object->As<RE::SpellItem>();
+        const RE::SpellItem* spell = _object->As<RE::SpellItem>();
         RE::MagicSystem::SpellType spellType = spell->GetSpellType();
         if ( spellType != RE::MagicSystem::SpellType::kSpell && spellType != RE::MagicSystem::SpellType::kLesserPower )
             return false;
@@ -343,59 +343,59 @@ namespace Utils
         return true;
     }
 
-    bool IsEquipableShout( RE::TESForm* _object )
+    bool IsEquipableShout( const RE::TESForm* _object )
     {
         return _object->Is( RE::FormType::Shout );
     }
 
-    RE::BGSEquipSlot* GetSlotForRightHand( RE::TESForm* _object )
+    RE::BGSEquipSlot* GetSlotForRightHand( const RE::TESForm* _object )
     {
         if ( _object->IsWeapon() )
         {
-            RE::TESObjectWEAP* weapon = _object->As<RE::TESObjectWEAP>();
+            const RE::TESObjectWEAP* weapon = _object->As<RE::TESObjectWEAP>();
             return !Utils::IsWeaponTwoHanded( weapon ) ? GameDataCache::BothHands : GameDataCache::RightHand;
         }
         else if ( _object->Is( RE::FormType::Scroll ) )
         {
-            RE::ScrollItem* scroll = _object->As<RE::ScrollItem>();
+            const RE::ScrollItem* scroll = _object->As<RE::ScrollItem>();
             return scroll->IsTwoHanded() ? GameDataCache::BothHands : GameDataCache::RightHand;
         }
         else if ( _object->Is( RE::FormType::Spell ) )
         {
-            RE::SpellItem* spell = _object->As<RE::SpellItem>();
+            const RE::SpellItem* spell = _object->As<RE::SpellItem>();
             if ( spell->GetSpellType() == RE::MagicSystem::SpellType::kSpell )
                 return spell->IsTwoHanded() ? GameDataCache::BothHands : GameDataCache::RightHand;
         }
         return nullptr;
     }
 
-    RE::BGSEquipSlot* GetSlotForLeftHand( RE::TESForm* _object )
+    RE::BGSEquipSlot* GetSlotForLeftHand( const RE::TESForm* _object )
     {
         if ( _object->IsWeapon() )
         {
-            RE::TESObjectWEAP* weapon = _object->As<RE::TESObjectWEAP>();
+            const RE::TESObjectWEAP* weapon = _object->As<RE::TESObjectWEAP>();
             return !Utils::IsWeaponTwoHanded( weapon ) ? GameDataCache::BothHands : GameDataCache::LeftHand;
         }
         else if ( _object->IsArmor() )
         {
-            RE::TESObjectARMO* armor = _object->As<RE::TESObjectARMO>();
+            const RE::TESObjectARMO* armor = _object->As<RE::TESObjectARMO>();
             return armor->IsShield() ? GameDataCache::Shield : nullptr;
         }
         else if ( _object->Is( RE::FormType::Scroll ) )
         {
-            RE::ScrollItem* scroll = _object->As<RE::ScrollItem>();
+            const RE::ScrollItem* scroll = _object->As<RE::ScrollItem>();
             return scroll->IsTwoHanded() ? GameDataCache::BothHands : GameDataCache::LeftHand;
         }
         else if ( _object->Is( RE::FormType::Spell ) )
         {
-            RE::SpellItem* spell = _object->As<RE::SpellItem>();
+            const RE::SpellItem* spell = _object->As<RE::SpellItem>();
             if ( spell->GetSpellType() == RE::MagicSystem::SpellType::kSpell )
                 return spell->IsTwoHanded() ? GameDataCache::BothHands : GameDataCache::LeftHand;
         }
         return nullptr;
     }
 
-    void EquipItem( RE::TESForm* _object, RE::BGSEquipSlot* _slot )
+    void EquipItem( RE::TESForm* _object, const RE::BGSEquipSlot* _slot )
     {
         auto filter = []( RE::TESForm& _obj )
         {
@@ -435,7 +435,7 @@ namespace Utils
         GameDataCache::EquipManager->EquipObject( GameDataCache::Player, _object->As<RE::TESBoundObject>(), nullptr, 1U, _slot );
     }
 
-    void EquipSpell( RE::TESForm* _object, RE::BGSEquipSlot* _slot )
+    void EquipSpell( RE::TESForm* _object, const RE::BGSEquipSlot* _slot )
     {
         RE::SpellItem* spell = _object->As<RE::SpellItem>();
         RE::BSTSmallArray<RE::SpellItem*>& playerSpells = GameDataCache::Player->GetActorRuntimeData().addedSpells;
@@ -445,7 +445,7 @@ namespace Utils
         GameDataCache::EquipManager->EquipSpell( GameDataCache::Player, spell, _slot );
     }
 
-    void EquipShout( RE::TESForm* _object, RE::BGSEquipSlot* _slot )
+    void EquipShout( RE::TESForm* _object, const RE::BGSEquipSlot* _slot )
     {
         RE::TESShout* shout = _object->As<RE::TESShout>();
         RE::TESWordOfPower* word = shout->variations[ 0 ].word;
