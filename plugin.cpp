@@ -6,6 +6,26 @@ namespace Papyrus
 }
 
 
+namespace Utils
+{
+    bool IsWeaponTwoHanded( const RE::TESObjectWEAP* );
+    bool IsTwoHanded( const RE::TESForm* );
+    bool IsShield( const RE::TESForm* );
+    bool IsEquipableItem( const RE::TESForm* );
+    bool IsEquipableSpell( const RE::TESForm* );
+    bool IsEquipableShout( const RE::TESForm* );
+
+    RE::BGSEquipSlot* GetSlotForRightHand( const RE::TESForm* );
+    RE::BGSEquipSlot* GetSlotForLeftHand( const RE::TESForm* );
+
+    void EquipItem( RE::TESForm*, const RE::BGSEquipSlot* );
+    void EquipSpell( RE::TESForm*, const RE::BGSEquipSlot* );
+    void EquipShout( RE::TESForm*, const RE::BGSEquipSlot* );
+
+    void PoisonWeapon( RE::TESObjectWEAP* _weapon, RE::AlchemyItem* );
+    void PoisonEquippedWeapon( RE::AlchemyItem* );
+}
+
 SKSEPluginLoad( const SKSE::LoadInterface* _skse )
 {
     SKSE::Init( _skse );
@@ -181,12 +201,12 @@ namespace Widgets
     WidgetData WidgetDatas[ Settings::GetQueuesCount() ];
 
     #define INIT_WIDGETDATA(QUEUE)\
-        WidgetDatas[ Settings::##QUEUE##QueueID ].Text = "Empty";\
-        WidgetDatas[ Settings::##QUEUE##QueueID ].ImageName = "";\
-        WidgetDatas[ Settings::##QUEUE##QueueID ].ImagePosX = Settings::##QUEUE##ImagePosX;\
-        WidgetDatas[ Settings::##QUEUE##QueueID ].ImagePosY = Settings::##QUEUE##ImagePosY;\
-        WidgetDatas[ Settings::##QUEUE##QueueID ].TextPosX = Settings::##QUEUE##TextPosX;\
-        WidgetDatas[ Settings::##QUEUE##QueueID ].TextPosY = Settings::##QUEUE##TextPosY;
+        WidgetDatas[ Settings::QUEUE##QueueID ].Text = "Empty";\
+        WidgetDatas[ Settings::QUEUE##QueueID ].ImageName = "";\
+        WidgetDatas[ Settings::QUEUE##QueueID ].ImagePosX = Settings::QUEUE##ImagePosX;\
+        WidgetDatas[ Settings::QUEUE##QueueID ].ImagePosY = Settings::QUEUE##ImagePosY;\
+        WidgetDatas[ Settings::QUEUE##QueueID ].TextPosX = Settings::QUEUE##TextPosX;\
+        WidgetDatas[ Settings::QUEUE##QueueID ].TextPosY = Settings::QUEUE##TextPosY;
 
 
     void Init()
@@ -242,6 +262,19 @@ namespace Widgets
             return Utils::IsShield( _object ) ? "equip/round-shield.dds" : "equip/cube.dds";
 
         return "equip/cube.dds";
+    }
+
+    void SendEvent( int _queueId )
+    {
+        RE::VMTypeID id = static_cast<RE::VMTypeID>( GameDataCache::Player->GetFormType() );
+        RE::VMHandle handle = GameDataCache::VM->handlePolicy.GetHandleForObject( id, GameDataCache::Player );
+
+        GameDataCache::VM->SendAndRelayEvent(
+                handle
+            ,   &GameDataCache::WidgetDataUpdatedEventName
+            ,   RE::MakeFunctionArguments( (int) _queueId )
+            ,   nullptr
+        );
     }
 }
 
@@ -545,6 +578,15 @@ namespace Queues
             return m_type;
         }
 
+        void setID( uint32_t _id )
+        {
+            m_queueID = _id;
+        }
+        uint32_t getID() const
+        {
+            return m_queueID;
+        }
+
         uint32_t getSize() const
         {
             return m_queue.size();
@@ -782,6 +824,7 @@ namespace Queues
         //std::string m_name ""
         uint32_t m_markedObjectIndex = 0;
         uint32_t m_currentIndex = 0;
+        uint32_t m_queueID;
         QueueType m_type = QueueType::kInvalid;
         bool m_wasEmpty = true;
     };
@@ -823,11 +866,49 @@ namespace Queues
     void Init()
     {
         Queues[ Settings::RightHandQueueID ].setType( Queue::QueueType::kRightHand );
+        Queues[ Settings::RightHandQueueID ].setID( Settings::RightHandQueueID );
+
         Queues[ Settings::LeftHandQueueID ].setType( Queue::QueueType::kLeftHand );
+        Queues[ Settings::LeftHandQueueID ].setID( Settings::LeftHandQueueID );
+
         Queues[ Settings::ShoutPowerQueueID ].setType( Queue::QueueType::kShoutOrPower );
+        Queues[ Settings::ShoutPowerQueueID ].setID( Settings::ShoutPowerQueueID );
+
         Queues[ Settings::AmmoQueueID ].setType( Queue::QueueType::kAmmo );
+        Queues[ Settings::AmmoQueueID ].setID( Settings::AmmoQueueID );
+
         Queues[ Settings::Potion1QueueID ].setType( Queue::QueueType::kPotion );
+        Queues[ Settings::Potion1QueueID ].setID( Settings::Potion1QueueID );
+
         Queues[ Settings::Potion2QueueID ].setType( Queue::QueueType::kPotion );
+        Queues[ Settings::Potion2QueueID ].setID( Settings::Potion2QueueID );
+    }
+
+    void OnHandQueue( Queue& _queue, Queue& _oppositeQueue )
+    {
+        if ( GameUICache::IsMenuOpened( RE::InventoryMenu::MENU_NAME ) )
+        {
+            Queues::QueueUnqueueFromInventoryMenu( _queue );
+        }
+        else if ( GameUICache::IsMenuOpened( RE::MagicMenu::MENU_NAME ) )
+        {
+            Queues::QueueUnqueueFromMagicMenu( _queue );
+        }
+        else if ( GameUICache::UI->menuStack.size() == GameUICache::DefaultMenusCount )
+        {
+            RE::TESForm* next = _queue.getNext();
+            if ( !next )
+                return;
+
+            if ( Utils::IsTwoHanded( next ) )
+                _oppositeQueue.unequipCurrent();
+
+            _queue.equipNext();
+
+            Widgets::WidgetDatas[ _queue.getID() ].ImageName = Widgets::GetImageName( _queue.getCurrent() );
+            Widgets::WidgetDatas[ _queue.getID() ].Text = _queue.getCurrent()->GetName();
+            Widgets::SendEvent( _queue.getID() );
+        }
     }
 
     //void UnequipFromOppositeQueueIfEquippingTwoHanded( Queue& _queue, Queue& _opppositeQueue )
@@ -841,6 +922,8 @@ namespace Queues
     //        _opppositeQueue.unequipCurrent();
     //}
 }
+
+
 
 class KeyEventSink: public RE::BSTEventSink<RE::InputEvent*>
 {
@@ -863,9 +946,72 @@ public:
             )
             return RE::BSEventNotifyControl::kContinue;
 
-        //DO STAFF HERE;
+        if ( buttonEvent->GetIDCode() == Settings::QueuesRotationKeys[ Settings::RightHandQueueID ] && buttonEvent->IsDown() )
+        {
+            Queues::OnHandQueue(
+                    Queues::Queues[ Settings::RightHandQueueID ]
+                ,   Queues::Queues[ Settings::LeftHandQueueID  ]
+            );
+        }
+        else if ( buttonEvent->GetIDCode() == Settings::QueuesRotationKeys[ Settings::LeftHandQueueID ] && buttonEvent->IsDown() )
+        {
+            Queues::OnHandQueue(
+                    Queues::Queues[ Settings::RightHandQueueID ]
+                ,   Queues::Queues[ Settings::LeftHandQueueID  ]
+            );
+        }
+        else if ( buttonEvent->GetIDCode() == Settings::QueuesRotationKeys[ Settings::ShoutPowerQueueID ] && buttonEvent->IsDown() )
+        {
+            Queues::Queue& queue = Queues::Queues[ Settings::ShoutPowerQueueID ];
+            if ( GameUICache::IsMenuOpened( RE::MagicMenu::MENU_NAME ) )
+                Queues::QueueUnqueueFromMagicMenu( queue );
+            else if ( GameUICache::UI->menuStack.size() == GameUICache::DefaultMenusCount )
+                EquipAndUpdateWidgetData( queue );
+        }
+        else if ( buttonEvent->GetIDCode() == Settings::QueuesRotationKeys[ Settings::AmmoQueueID ] && buttonEvent->IsDown() )
+        {
+            Queues::Queue& queue = Queues::Queues[ Settings::AmmoQueueID ];
+            if ( GameUICache::IsMenuOpened( RE::InventoryMenu::MENU_NAME ) )
+                Queues::QueueUnqueueFromInventoryMenu( queue );
+            else if ( GameUICache::UI->menuStack.size() == GameUICache::DefaultMenusCount )
+                EquipAndUpdateWidgetData( queue );
+        }
+        else if ( buttonEvent->GetIDCode() == Settings::QueuesRotationKeys[ Settings::Potion1QueueID ] && buttonEvent->IsDown() )
+        {
+            Queues::Queue& queue = Queues::Queues[ Settings::Potion1QueueID ];
+            if ( GameUICache::IsMenuOpened( RE::InventoryMenu::MENU_NAME ) )
+                Queues::QueueUnqueueFromInventoryMenu( queue );
+            else if ( GameUICache::UI->menuStack.size() == GameUICache::DefaultMenusCount )
+                EquipAndUpdateWidgetData( queue );
+        }
+        else if ( buttonEvent->GetIDCode() == Settings::QueuesRotationKeys[ Settings::Potion2QueueID ] && buttonEvent->IsDown() )
+        {
+            Queues::Queue& queue = Queues::Queues[ Settings::Potion2QueueID ];
+            if ( GameUICache::IsMenuOpened( RE::InventoryMenu::MENU_NAME ) )
+                Queues::QueueUnqueueFromInventoryMenu( queue );
+            else if ( GameUICache::UI->menuStack.size() == GameUICache::DefaultMenusCount )
+                EquipAndUpdateWidgetData( queue );
+        }
+        else if ( buttonEvent->GetIDCode() == Settings::QueuesRotationKeys[ 0 ] && buttonEvent->IsDown() )
+        {
+            Queues::Queues[ Settings::Potion1QueueID ].usePotion();
+        }
+        else if ( buttonEvent->GetIDCode() == Settings::QueuesRotationKeys[ 1 ] && buttonEvent->IsDown() )
+        {
+            Queues::Queues[ Settings::Potion2QueueID ].usePotion();
+        }
 
         return RE::BSEventNotifyControl::kContinue;
+    }
+
+private:
+
+    void EquipAndUpdateWidgetData( Queues::Queue& _queue )
+    {
+        _queue.equipNext();
+        Widgets::WidgetDatas[ _queue.getID() ].ImageName = Widgets::GetImageName( _queue.getCurrent() );
+        Widgets::WidgetDatas[ _queue.getID() ].Text = _queue.getCurrent()->GetName();
+        Widgets::SendEvent( _queue.getID() );
     }
 };
 
