@@ -5,7 +5,6 @@ namespace Papyrus
     bool RegisterPapyrusFunctions( RE::BSScript::IVirtualMachine* );
 }
 
-
 namespace Utils
 {
     bool IsWeaponTwoHanded( const RE::TESObjectWEAP* );
@@ -98,6 +97,19 @@ namespace Settings
 
         QueuesUseKeys[ 0 ] = Key5;
         QueuesUseKeys[ 1 ] = Key6;
+    }
+
+    uint32_t ToQueuesUseKeysIndex( uint32_t _queueId )
+    {
+        switch ( _queueId )
+        {
+        case 4:
+            return 0;
+        case 5:
+            return 1;
+        default:
+            return 0xff;
+        }
     }
 }
 
@@ -821,11 +833,14 @@ namespace Queues
 
         RE::BSTArray<RE::TESForm*> m_queue;
         RE::TESForm** m_markedObject = nullptr;
-        //std::string m_name ""
+
         uint32_t m_markedObjectIndex = 0;
         uint32_t m_currentIndex = 0;
+
         uint32_t m_queueID;
+
         QueueType m_type = QueueType::kInvalid;
+
         bool m_wasEmpty = true;
     };
 
@@ -910,17 +925,6 @@ namespace Queues
             Widgets::SendEvent( _queue.getID() );
         }
     }
-
-    //void UnequipFromOppositeQueueIfEquippingTwoHanded( Queue& _queue, Queue& _opppositeQueue )
-    //{
-    //    RE::TESForm* form = _queue.getNext();
-
-    //    if ( !form )
-    //        return;
-
-    //    if ( Utils::IsTwoHanded( form ) )
-    //        _opppositeQueue.unequipCurrent();
-    //}
 }
 
 
@@ -1025,8 +1029,157 @@ KeyEventSink* GetKeyEventSink()
 
 namespace Papyrus
 {
+
+    void PoisonWeapon( RE::StaticFunctionTag*, RE::TESObjectWEAP* _weapon, RE::AlchemyItem* _potion )
+    {
+        Utils::PoisonWeapon( _weapon, _potion );
+    }
+
+    int GetQueueRotationKey( RE::StaticFunctionTag*, int _queueId )
+    {
+        return Settings::QueuesRotationKeys[ _queueId ];
+    }
+    void SetQueueRotationKey( RE::StaticFunctionTag*, int _queueId, int _keyCode )
+    {
+        Settings::QueuesRotationKeys[ _queueId ] = _keyCode;
+    }
+
+    int GetQueueUseKey( RE::StaticFunctionTag*, int _queueId )
+    {
+        return Settings::QueuesUseKeys[ Settings::ToQueuesUseKeysIndex( _queueId ) ];
+    }
+    int SetQueueUseKey( RE::StaticFunctionTag*, int _queueId, int _keyCode )
+    {
+        Settings::QueuesUseKeys[ Settings::ToQueuesUseKeysIndex( _queueId ) ] = _keyCode;
+    }
+
+    std::vector<std::string> GetQueueItems( RE::StaticFunctionTag*, int _queueId )
+    {
+        Queues::Queue& queue = Queues::Queues[ _queueId ];
+        uint32_t size = queue.getSize();
+
+        std::vector<std::string> result;
+
+        for ( uint32_t i = 0; i < size; ++i )
+        {
+            result.push_back( queue.at( i )->GetName() );
+        }
+        return result;
+    }
+
+    void RemoveFromQueue( RE::StaticFunctionTag*, int _queueId, int _index )
+    {
+        Queues::Queue& queue = Queues::Queues[ _index ];
+        queue.removeAt( _index );
+    }
+
+
+    int GetImagePosX( RE::StaticFunctionTag*, int _queueId )
+    {
+        return Widgets::WidgetDatas[ _queueId ].ImagePosX;
+    }
+    void SetImagePosX( RE::StaticFunctionTag*, int _queueId, int _posX )
+    {
+        Widgets::WidgetDatas[ _queueId ].ImagePosX = _posX;
+    }
+
+    int GetImagePosY( RE::StaticFunctionTag*, int _queueId )
+    {
+        return Widgets::WidgetDatas[ _queueId ].ImagePosY;
+    }
+    void SetImagePosY( RE::StaticFunctionTag*, int _queueId, int _posY )
+    {
+        Widgets::WidgetDatas[ _queueId ].ImagePosY = _posY; 
+    }
+
+    int GetTextPosX( RE::StaticFunctionTag*, int _queueId )
+    {
+        return Widgets::WidgetDatas[ _queueId ].TextPosX;
+    }
+    void SetTextPosX( RE::StaticFunctionTag*, int _queueId, int _posX )
+    {
+        Widgets::WidgetDatas[ _queueId ].TextPosX = _posX; 
+    }
+
+    int GetTextPosY( RE::StaticFunctionTag*, int _queueId )
+    {
+        return Widgets::WidgetDatas[ _queueId ].TextPosY;
+    }
+    void SetTextPosY( RE::StaticFunctionTag*, int _queueId, int _posY )
+    {
+        Widgets::WidgetDatas[ _queueId ].TextPosY = _posY;
+    }
+
+    std::string GetImageName( RE::StaticFunctionTag*, int _queueId )
+    {
+        return Widgets::WidgetDatas[ _queueId ].ImageName;
+    }
+    void SetImageName( RE::StaticFunctionTag*, int _queueId, std::string _name )
+    {
+        Widgets::WidgetDatas[ _queueId ].ImageName = _name;
+    }
+
+    std::string GetText( RE::StaticFunctionTag*, int _queueId )
+    {
+        return Widgets::WidgetDatas[ _queueId ].Text;
+    }
+    void SetText( RE::StaticFunctionTag*, int _queueId, std::string _text )
+    {
+        Widgets::WidgetDatas[ _queueId ].Text = _text;
+    }
+
+    int GetiWantWidgetImageID( RE::StaticFunctionTag*, int _queueId )
+    {
+        return Widgets::WidgetDatas[ _queueId ].iWantWidgetImageID;
+    }
+    void SetiWantWidgetImageID( RE::StaticFunctionTag*, int _queueId, int _iWantId )
+    {
+        Widgets::WidgetDatas[ _queueId ].iWantWidgetImageID = _iWantId;
+    }
+
+    int GetiWantWidgetTextID( RE::StaticFunctionTag*, int _queueId )
+    {
+        return Widgets::WidgetDatas[ _queueId ].iWantWidgetTextID;
+    }
+    void SetiWantWidgetTextID( RE::StaticFunctionTag*, int _queueId, int _iWantId )
+    {
+        Widgets::WidgetDatas[ _queueId ].iWantWidgetTextID = _iWantId;
+    }
+
     bool RegisterPapyrusFunctions( RE::BSScript::IVirtualMachine* _vm )
     {
+        _vm->RegisterFunction( "PoisonWeapon", "EQ_Utils", PoisonWeapon );
+
+        _vm->RegisterFunction( "GetQueueRotationKey", "EQ_Utils", GetQueueRotationKey );
+        _vm->RegisterFunction( "SetQueueRotationKey", "EQ_Utils", SetQueueRotationKey );
+
+        _vm->RegisterFunction( "GetQueueUseKey", "EQ_Utils", GetQueueUseKey );
+        _vm->RegisterFunction( "SetQueueUseKey", "EQ_Utils", SetQueueUseKey );
+
+        _vm->RegisterFunction( "GetQueueItems", "EQ_Utils", GetQueueItems );
+        _vm->RegisterFunction( "RemoveFromQueue", "EQ_Utils", RemoveFromQueue );
+
+        _vm->RegisterFunction( "GetImagePosX", "EQ_Utils", GetImagePosX );
+        _vm->RegisterFunction( "SetImagePosX", "EQ_Utils", SetImagePosX );
+        _vm->RegisterFunction( "GetImagePosY", "EQ_Utils", GetImagePosY );
+        _vm->RegisterFunction( "SetImagePosY", "EQ_Utils", SetImagePosX );
+
+        _vm->RegisterFunction( "GetTextPosX", "EQ_Utils", GetTextPosX );
+        _vm->RegisterFunction( "SetTextPosX", "EQ_Utils", SetTextPosX );
+        _vm->RegisterFunction( "GetTextPosY", "EQ_Utils", GetTextPosY );
+        _vm->RegisterFunction( "SetTextPosY", "EQ_Utils", SetTextPosY );
+
+        _vm->RegisterFunction( "GetImageName", "EQ_Utils", GetImageName );
+        _vm->RegisterFunction( "SetImageName", "EQ_Utils", SetImageName );
+
+        _vm->RegisterFunction( "GetText", "EQ_Utils", GetText );
+        _vm->RegisterFunction( "SetText", "EQ_Utils", SetText );
+
+        _vm->RegisterFunction( "GetiWantWidgetImageID", "EQ_Utils", GetiWantWidgetImageID );
+        _vm->RegisterFunction( "SetiWantWidgetImageID", "EQ_Utils", SetiWantWidgetImageID );
+        _vm->RegisterFunction( "GetiWantWidgetTextID", "EQ_Utils", GetiWantWidgetTextID );
+        _vm->RegisterFunction( "SetiWantWidgetTextID", "EQ_Utils", SetiWantWidgetTextID );
+
         return true;
     }
 }
