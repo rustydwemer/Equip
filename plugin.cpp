@@ -640,11 +640,6 @@ namespace Queues
             if ( !isObjectValidForQueueing( _object ) )
                 return result;
 
-            //0 - empty
-            //1 - sword
-            //2 - bow
-            //3 - axe
-
             bool isObjectQueued = isQueued( _object, true );
             if ( isObjectQueued && m_markedObject )
             {
@@ -694,7 +689,7 @@ namespace Queues
 
         void equipCurrent()
         {
-            if ( m_queue.size() <= 1 )
+            if ( m_queue.size() <= 1 || m_currentIndex == 0 )
                 return;
 
             RE::TESForm* object = m_queue[ m_currentIndex ];
@@ -776,10 +771,10 @@ namespace Queues
 
         void removeAt( int _index )
         {
-            if ( m_queue.size() <= 1 || m_currentIndex == 0 )
+            if ( m_queue.size() <= 1 )
                 return;
 
-            uint32_t uIndex = _index;
+            size_t uIndex = _index;
 
             if ( uIndex >= m_queue.size() )
                 return;
@@ -787,7 +782,9 @@ namespace Queues
             if ( uIndex != 0 && m_currentIndex <= uIndex )
                 --m_currentIndex;
 
-            m_queue.erase( m_queue.begin() + uIndex );
+            RE::DebugMessageBox( std::to_string( uIndex ).c_str() );
+
+            //m_queue.erase( m_queue.begin() + uIndex );
         }
 
     private:
@@ -1167,10 +1164,24 @@ namespace Papyrus
         return result;
     }
 
-    void RemoveFromQueue( RE::StaticFunctionTag*, int _queueId, int _index )
+    void RemoveFromQueue( RE::StaticFunctionTag*, int _queueId, std::vector<int> _indexes, int _count )
     {
+        if ( _count <= 0 )
+            return;
+
+        //we have to take pointers to the form while the indexes of the array are valid
+        //indexes will become invalid if we change the array (remove some items from it)
+
+        std::vector<RE::TESForm*> objectsToRemove;
+
         Queues::Queue& queue = Queues::Queues[ _queueId ];
-        queue.removeAt( _index + 1 ); // +1 as we excluded first empty element from the array we passed to Papyrus
+
+        for ( int i = 0; i < _count; ++i )
+            objectsToRemove.push_back( queue.at( _indexes[ i ] + 1 ) );
+
+        for ( RE::TESForm* object : objectsToRemove )
+            queue.queueUnqueue( object );
+
         queue.equipCurrent();
         Utils::UpdateWidgetData( queue );
     }
