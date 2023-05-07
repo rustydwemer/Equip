@@ -5,6 +5,8 @@
 //3. after item is removed from the queue - it's widget stays, the item next after removed will be considered the current item, 
 //but it is not equipped, thus it will be skipped -- fixed?
 
+//4. CTD when cycling empty ammo queue; RHQ and LHQ are OK, others - IDK
+
 void skseEventListener( SKSE::MessagingInterface::Message* );
 
 namespace Papyrus
@@ -24,7 +26,7 @@ namespace Utils
     RE::BGSEquipSlot* GetSlotForRightHand( const RE::TESForm* );
     RE::BGSEquipSlot* GetSlotForLeftHand( const RE::TESForm* );
 
-    void EquipItem( RE::TESForm*, const RE::BGSEquipSlot* );
+    int EquipItem( RE::TESForm*, const RE::BGSEquipSlot* );
     void EquipSpell( RE::TESForm*, const RE::BGSEquipSlot* );
     void EquipShout( RE::TESForm*s );
 
@@ -449,7 +451,9 @@ namespace Utils
         return nullptr;
     }
 
-    void EquipItem( RE::TESForm* _object, const RE::BGSEquipSlot* _slot )
+    // -1 - not equipped
+    // 1 - equipped
+    int EquipItem( RE::TESForm* _object, const RE::BGSEquipSlot* _slot )
     {
         auto filter = []( RE::TESForm& _obj )
         {
@@ -474,19 +478,20 @@ namespace Utils
         auto it = objectsInInventory.find( _object->As<RE::TESBoundObject>() );
 
         if ( it == objectsInInventory.end() )
-            return;
+            return -1;
 
         int32_t objectsInInventoryCount = it->second.first;
         RE::InventoryEntryData* entryData = it->second.second.get();
         bool isObjectWorn = entryData->IsWorn();
 
         if ( objectsInInventoryCount == 1 && isObjectWorn )
-            return;
+            return -1;
 
         if ( objectsInInventoryCount < 1 )
-            return;
+            return -1;
 
         GameDataCache::EquipManager->EquipObject( GameDataCache::Player, _object->As<RE::TESBoundObject>(), nullptr, 1U, _slot );
+        return 1;
     }
 
     void EquipSpell( RE::TESForm* _object, const RE::BGSEquipSlot* _slot )
@@ -613,12 +618,12 @@ namespace Queues
             return m_queueID;
         }
 
-        uint32_t getSize() const
+        size_t getSize() const
         {
             return m_queue.size();
         }
 
-        RE::TESForm* at( uint32_t _index ) const
+        RE::TESForm* at( size_t _index ) const
         {
             if ( _index >= m_queue.size() )
                 return nullptr;
@@ -635,10 +640,17 @@ namespace Queues
             if ( !isObjectValidForQueueing( _object ) )
                 return result;
 
+            //0 - empty
+            //1 - sword
+            //2 - bow
+            //3 - axe
+
             bool isObjectQueued = isQueued( _object, true );
             if ( isObjectQueued && m_markedObject )
             {
-                m_queue.erase( m_markedObject );
+                auto beginIt = m_queue.begin();
+                size_t offset = m_markedObject - &(*beginIt);
+                m_queue.erase( beginIt + offset );
                 if ( m_markedObjectIndex <= m_currentIndex && m_currentIndex >= 1 )
                     --m_currentIndex;
 
@@ -665,7 +677,7 @@ namespace Queues
             if ( m_queue.size() <= 1 )
                 return nullptr;
 
-            uint32_t nextIndex = m_currentIndex + 1;
+            size_t nextIndex = m_currentIndex + 1;
             if ( nextIndex >= m_queue.size() )
                 return m_queue[ 1 ];
 
@@ -686,6 +698,9 @@ namespace Queues
                 return;
 
             RE::TESForm* object = m_queue[ m_currentIndex ];
+            if ( !object )
+                return;
+
             RE::BGSEquipSlot* slot = getSlot( object );
 
             switch ( m_type )
@@ -693,7 +708,16 @@ namespace Queues
             case Queues::Queue::QueueType::kRightHand:
             case Queues::Queue::QueueType::kLeftHand:
                 if ( Utils::IsEquipableItem( object ) )
-                    Utils::EquipItem( object, slot );
+                {
+                    size_t index = m_currentIndex;
+                    while ( Utils::EquipItem( object, slot ) == -1 )
+                    {
+                        advance();
+                        // this condition will be triggered if we made a full cycle over the queue in this while loop
+                        if ( index == m_currentIndex )
+                            break;
+                    }
+                }
                 else if ( Utils::IsEquipableSpell( object ) )
                     Utils::EquipSpell( object, slot );
                 break;
@@ -711,7 +735,7 @@ namespace Queues
 
         void unequipCurrent()
         {
-            if ( m_queue.size() <= 1 )
+            if ( m_queue.size() <= 1 || m_currentIndex == 0 )
                 return;
 
             RE::TESBoundObject* item = m_queue[ m_currentIndex ]->As<RE::TESBoundObject>();
@@ -721,7 +745,7 @@ namespace Queues
 
         void advance()
         {
-            if ( ++m_currentIndex >= m_queue.size() ) m_currentIndex = 1;
+            if ( ++m_currentIndex >= m_queue.size() ) m_currentIndex = m_queue.size() == 1 ? 0 : 1;
         }
 
         void equipNext()
@@ -750,21 +774,21 @@ namespace Queues
                 Utils::PoisonEquippedWeapon( potion );
         }
 
-        //void removeAt( int _index )
-        //{
-        //    if ( _index < 0 || m_queue.size() <= 1 )
-        //        return;
+        void removeAt( int _index )
+        {
+            if ( m_queue.size() <= 1 || m_currentIndex == 0 )
+                return;
 
-        //    uint32_t uIndex = _index;
+            uint32_t uIndex = _index;
 
-        //    if ( uIndex >= m_queue.size() )
-        //        return;
+            if ( uIndex >= m_queue.size() )
+                return;
 
-        //    if ( uIndex != 0 && m_currentIndex <= uIndex )
-        //        --m_currentIndex;
+            if ( uIndex != 0 && m_currentIndex <= uIndex )
+                --m_currentIndex;
 
-        //    m_queue.erase( m_queue.begin() + uIndex );
-        //}
+            m_queue.erase( m_queue.begin() + uIndex );
+        }
 
     private:
 
@@ -772,13 +796,13 @@ namespace Queues
         {
             uint32_t count = 0;
             auto fn = [ _object, &count ]( RE::TESForm* it ) { ++count; return it == _object; };
-            RE::TESForm** searchResult = std::find_if( m_queue.begin(), m_queue.end(), fn );
+            auto searchResult = std::find_if( m_queue.begin(), m_queue.end(), fn );
 
             bool result = searchResult != m_queue.end();
             if ( result && _markForUnqueueing )
             {
                 m_markedObjectIndex = count - 1;
-                m_markedObject = searchResult;
+                m_markedObject = &(*searchResult);
             }
             return result;
         }
@@ -840,11 +864,11 @@ namespace Queues
             return nullptr;
         }
 
-        RE::BSTArray<RE::TESForm*> m_queue;
+        std::vector<RE::TESForm*> m_queue;
         RE::TESForm** m_markedObject = nullptr;
 
-        uint32_t m_markedObjectIndex = 0;
-        uint32_t m_currentIndex = 0;
+        size_t m_markedObjectIndex = 0;
+        size_t m_currentIndex = 0;
 
         uint32_t m_queueID;
 
@@ -922,9 +946,10 @@ namespace Queues
 
             if ( result == -1 )
             {
+                RE::TESForm* object = _queue.getCurrent();
                 _queue.equipCurrent();
-                Widgets::WidgetDatas[ _queue.getID() ].ImageName = Widgets::GetImageName( _queue.getCurrent() );
-                Widgets::WidgetDatas[ _queue.getID() ].Text = _queue.getCurrent()->GetName();
+                Widgets::WidgetDatas[ _queue.getID() ].ImageName = Widgets::GetImageName( object );
+                Widgets::WidgetDatas[ _queue.getID() ].Text = object ? object->GetName() : "Empty";
                 Widgets::SendEvent( _queue.getID() );
             }
         }
@@ -934,9 +959,10 @@ namespace Queues
 
             if ( result == -1 )
             {
+                RE::TESForm* object = _queue.getCurrent();
                 _queue.equipCurrent();
-                Widgets::WidgetDatas[ _queue.getID() ].ImageName = Widgets::GetImageName( _queue.getCurrent() );
-                Widgets::WidgetDatas[ _queue.getID() ].Text = _queue.getCurrent()->GetName();
+                Widgets::WidgetDatas[ _queue.getID() ].ImageName = Widgets::GetImageName( object );
+                Widgets::WidgetDatas[ _queue.getID() ].Text = object ? object->GetName() : "Empty";
                 Widgets::SendEvent( _queue.getID() );
             }
         }
@@ -959,6 +985,16 @@ namespace Queues
 }
 
 
+namespace Utils
+{
+    void UpdateWidgetData( Queues::Queue& _queue )
+    {
+        RE::TESForm* object = _queue.getCurrent();
+        Widgets::WidgetDatas[ _queue.getID() ].ImageName = Widgets::GetImageName( object );
+        Widgets::WidgetDatas[ _queue.getID() ].Text = object ? object->GetName() : "Empty";
+        Widgets::SendEvent( _queue.getID() );
+    }
+}
 
 class KeyEventSink: public RE::BSTEventSink<RE::InputEvent*>
 {
@@ -1004,13 +1040,13 @@ public:
                 if ( result == -1 )
                 {
                     queue.equipCurrent();
-                    UpdateWidgetData( queue );
+                    Utils::UpdateWidgetData( queue );
                 }
             }
             else if ( GameUICache::UI->menuStack.size() == GameUICache::DefaultMenusCount )
             {
                 queue.equipNext();
-                UpdateWidgetData( queue );
+                Utils::UpdateWidgetData( queue );
             }
         }
         else if ( buttonEvent->GetIDCode() == Settings::QueuesRotationKeys[ Settings::AmmoQueueID ] && buttonEvent->IsDown() )
@@ -1022,13 +1058,13 @@ public:
                 if ( result == -1 )
                 {
                     queue.equipCurrent();
-                    UpdateWidgetData( queue );
+                    Utils::UpdateWidgetData( queue );
                 }
             }
             else if ( GameUICache::UI->menuStack.size() == GameUICache::DefaultMenusCount )
             {
                 queue.equipNext();
-                UpdateWidgetData( queue );
+                Utils::UpdateWidgetData( queue );
             }
         }
         else if ( buttonEvent->GetIDCode() == Settings::QueuesRotationKeys[ Settings::Potion1QueueID ] && buttonEvent->IsDown() )
@@ -1040,13 +1076,13 @@ public:
                 if ( result == -1 )
                 {
                     queue.equipCurrent();
-                    UpdateWidgetData( queue );
+                    Utils::UpdateWidgetData( queue );
                 }
             }
             else if ( GameUICache::UI->menuStack.size() == GameUICache::DefaultMenusCount )
             {
                 queue.equipNext();
-                UpdateWidgetData( queue );
+                Utils::UpdateWidgetData( queue );
             }
         }
         else if ( buttonEvent->GetIDCode() == Settings::QueuesRotationKeys[ Settings::Potion2QueueID ] && buttonEvent->IsDown() )
@@ -1058,13 +1094,13 @@ public:
                 if ( result == -1 )
                 {
                     queue.equipCurrent();
-                    UpdateWidgetData( queue );
+                    Utils::UpdateWidgetData( queue );
                 }
             }
             else if ( GameUICache::UI->menuStack.size() == GameUICache::DefaultMenusCount )
             {
                 queue.equipNext();
-                UpdateWidgetData( queue );
+                Utils::UpdateWidgetData( queue );
             }
         }
         else if ( buttonEvent->GetIDCode() == Settings::QueuesRotationKeys[ 0 ] && buttonEvent->IsDown() )
@@ -1080,13 +1116,6 @@ public:
     }
 
 private:
-
-    void UpdateWidgetData( Queues::Queue& _queue )
-    {
-        Widgets::WidgetDatas[ _queue.getID() ].ImageName = Widgets::GetImageName( _queue.getCurrent() );
-        Widgets::WidgetDatas[ _queue.getID() ].Text = _queue.getCurrent()->GetName();
-        Widgets::SendEvent( _queue.getID() );
-    }
 };
 
 KeyEventSink KESink;
@@ -1126,11 +1155,12 @@ namespace Papyrus
     std::vector<std::string> GetQueueItems( RE::StaticFunctionTag*, int _queueId )
     {
         Queues::Queue& queue = Queues::Queues[ _queueId ];
-        uint32_t size = queue.getSize();
+        size_t size = queue.getSize();
 
         std::vector<std::string> result;
 
-        for ( uint32_t i = 0; i < size; ++i )
+        // i = 1 as the first element in the array is empty (nullptr)
+        for ( size_t i = 1; i < size; ++i )
         {
             result.push_back( queue.at( i )->GetName() );
         }
@@ -1140,8 +1170,9 @@ namespace Papyrus
     void RemoveFromQueue( RE::StaticFunctionTag*, int _queueId, int _index )
     {
         Queues::Queue& queue = Queues::Queues[ _queueId ];
-        queue.queueUnqueue( queue.at( _index ) );
-        //queue.removeAt( _index );
+        queue.removeAt( _index + 1 ); // +1 as we excluded first empty element from the array we passed to Papyrus
+        queue.equipCurrent();
+        Utils::UpdateWidgetData( queue );
     }
 
 
@@ -1267,8 +1298,9 @@ void skseEventListener( SKSE::MessagingInterface::Message* _msg )
         Queues::Init();
         Widgets::Init();
 
-        for ( uint32_t i = 0; i < Settings::GetQueuesCount(); ++i )
-            Widgets::SendEvent( i );
+        //should be called when the papyrus script is loaded
+        /* for ( uint32_t i = 0; i < Settings::GetQueuesCount(); ++i )
+            Widgets::SendEvent( i );*/
 
         RE::BSInputDeviceManager* idm = RE::BSInputDeviceManager::GetSingleton();
         idm->AddEventSink( GetKeyEventSink() );
