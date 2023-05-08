@@ -769,23 +769,21 @@ namespace Queues
                 Utils::PoisonEquippedWeapon( potion );
         }
 
-        void removeAt( int _index )
-        {
-            if ( m_queue.size() <= 1 )
-                return;
+        //void removeAt( int _index )
+        //{
+        //    if ( m_queue.size() <= 1 )
+        //        return;
 
-            size_t uIndex = _index;
+        //    size_t uIndex = _index;
 
-            if ( uIndex >= m_queue.size() )
-                return;
+        //    if ( uIndex >= m_queue.size() )
+        //        return;
 
-            if ( uIndex != 0 && m_currentIndex <= uIndex )
-                --m_currentIndex;
+        //    if ( uIndex != 0 && m_currentIndex <= uIndex )
+        //        --m_currentIndex;
 
-            RE::DebugMessageBox( std::to_string( uIndex ).c_str() );
-
-            //m_queue.erase( m_queue.begin() + uIndex );
-        }
+        //    //m_queue.erase( m_queue.begin() + uIndex );
+        //}
 
     private:
 
@@ -900,7 +898,7 @@ namespace Queues
         if ( magicMenu )
         {
             RE::GFxValue result;
-            magicMenu->uiMovie->GetVariable( &result, "_root.Menu_mc.inventoryList.itemList.selectedEntry.formId" );
+            magicMenu->uiMovie->GetVariable( &result, "_root.Menu_mc.inventoryLists.itemList.selectedEntry.formId" );
             if ( result.GetType() != RE::GFxValue::ValueType::kNumber )
                 return 0;
 
@@ -966,16 +964,15 @@ namespace Queues
         else if ( GameUICache::UI->menuStack.size() == GameUICache::DefaultMenusCount )
         {
             RE::TESForm* next = _queue.getNext();
-            if ( !next )
-                return;
-
-            if ( Utils::IsTwoHanded( next ) )
+            if ( next && Utils::IsTwoHanded( next ) )
                 _oppositeQueue.unequipCurrent();
 
             _queue.equipNext();
 
-            Widgets::WidgetDatas[ _queue.getID() ].ImageName = Widgets::GetImageName( _queue.getCurrent() );
-            Widgets::WidgetDatas[ _queue.getID() ].Text = _queue.getCurrent()->GetName();
+            RE::TESForm* current = _queue.getCurrent();
+
+            Widgets::WidgetDatas[ _queue.getID() ].ImageName = Widgets::GetImageName( current );
+            Widgets::WidgetDatas[ _queue.getID() ].Text = current ? current->GetName() : "Empty";
             Widgets::SendEvent( _queue.getID() );
         }
     }
@@ -1072,13 +1069,12 @@ public:
                 int result = Queues::QueueUnqueueFromInventoryMenu( queue );
                 if ( result == -1 )
                 {
-                    queue.equipCurrent();
                     Utils::UpdateWidgetData( queue );
                 }
             }
             else if ( GameUICache::UI->menuStack.size() == GameUICache::DefaultMenusCount )
             {
-                queue.equipNext();
+                queue.advance();
                 Utils::UpdateWidgetData( queue );
             }
         }
@@ -1090,21 +1086,20 @@ public:
                 int result = Queues::QueueUnqueueFromInventoryMenu( queue );
                 if ( result == -1 )
                 {
-                    queue.equipCurrent();
                     Utils::UpdateWidgetData( queue );
                 }
             }
             else if ( GameUICache::UI->menuStack.size() == GameUICache::DefaultMenusCount )
             {
-                queue.equipNext();
+                queue.advance();
                 Utils::UpdateWidgetData( queue );
             }
         }
-        else if ( buttonEvent->GetIDCode() == Settings::QueuesRotationKeys[ 0 ] && buttonEvent->IsDown() )
+        else if ( buttonEvent->GetIDCode() == Settings::QueuesUseKeys[ 0 ] && buttonEvent->IsDown() )
         {
             Queues::Queues[ Settings::Potion1QueueID ].usePotion();
         }
-        else if ( buttonEvent->GetIDCode() == Settings::QueuesRotationKeys[ 1 ] && buttonEvent->IsDown() )
+        else if ( buttonEvent->GetIDCode() == Settings::QueuesUseKeys[ 1 ] && buttonEvent->IsDown() )
         {
             Queues::Queues[ Settings::Potion2QueueID ].usePotion();
         }
@@ -1259,6 +1254,12 @@ namespace Papyrus
         Widgets::WidgetDatas[ _queueId ].iWantWidgetTextID = _iWantId;
     }
 
+    void UpdateWidgetData( RE::StaticFunctionTag*, int _queueId )
+    {
+        Utils::UpdateWidgetData( Queues::Queues[ _queueId ] );
+        Widgets::SendEvent( _queueId );
+    }
+
     bool RegisterPapyrusFunctions( RE::BSScript::IVirtualMachine* _vm )
     {
         _vm->RegisterFunction( "PoisonWeapon", "EQ_Utils", PoisonWeapon );
@@ -1292,6 +1293,8 @@ namespace Papyrus
         _vm->RegisterFunction( "SetiWantWidgetImageID", "EQ_Utils", SetiWantWidgetImageID );
         _vm->RegisterFunction( "GetiWantWidgetTextID", "EQ_Utils", GetiWantWidgetTextID );
         _vm->RegisterFunction( "SetiWantWidgetTextID", "EQ_Utils", SetiWantWidgetTextID );
+
+        _vm->RegisterFunction( "UpdateWidgetData", "EQ_Utils", UpdateWidgetData );
 
         return true;
     }
