@@ -1,11 +1,9 @@
-//bugs:
-//1. only 1 item at a time can be removed from the queue via MCM -----> check Papyrus scripts
-//2. after queue is emptied, the widget for the last item stays and it is not get destroyd ->
-//---------------------------->  make zero index invalid and always filled with Empty item
-//3. after item is removed from the queue - it's widget stays, the item next after removed will be considered the current item, 
-//but it is not equipped, thus it will be skipped -- fixed?
+//TODO:
+//add more images
+//unequip item when removing if this is the current item in the queue; - done
+//when items are removed from the invetory we still cycle over the queue instead of doing nothing - done
 
-//4. CTD when cycling empty ammo queue; RHQ and LHQ are OK, others - IDK
+//implement saves
 
 void skseEventListener( SKSE::MessagingInterface::Message* );
 
@@ -64,9 +62,11 @@ namespace Settings
     const uint32_t Potion1QueueID       = 4;
     const uint32_t Potion2QueueID       = 5;
 
+    const int DefaultImageZoom = 50;
+    const int DefaultTextFontSize = 18;
 
     #define DECLARE_DEFAULT_COORDINATE(COORDINATE, VALUE)\
-        int COORDINATE = VALUE;
+        const int COORDINATE = VALUE;
 
     #define DECLARE_DEFAULT_POSITION(QUEUE, IMAGE_POS_X, IMAGE_POS_Y, TEXT_POS_X, TEXT_POS_Y)\
         DECLARE_DEFAULT_COORDINATE( QUEUE##ImagePosX,   IMAGE_POS_X )\
@@ -215,6 +215,11 @@ namespace Widgets
         int TextPosX;
         int TextPosY;
 
+        int ImageZoomX;
+        int ImageZoomY;
+
+        int TextFontSize;
+
         std::string ImageName;
         std::string Text;
     };
@@ -222,12 +227,15 @@ namespace Widgets
     WidgetData WidgetDatas[ Settings::GetQueuesCount() ];
 
     #define INIT_WIDGETDATA(QUEUE)\
-        WidgetDatas[ Settings::QUEUE##QueueID ].Text = "Empty";\
-        WidgetDatas[ Settings::QUEUE##QueueID ].ImageName = GetImageName( nullptr );\
-        WidgetDatas[ Settings::QUEUE##QueueID ].ImagePosX = Settings::QUEUE##ImagePosX;\
-        WidgetDatas[ Settings::QUEUE##QueueID ].ImagePosY = Settings::QUEUE##ImagePosY;\
-        WidgetDatas[ Settings::QUEUE##QueueID ].TextPosX = Settings::QUEUE##TextPosX;\
-        WidgetDatas[ Settings::QUEUE##QueueID ].TextPosY = Settings::QUEUE##TextPosY;
+        WidgetDatas[ Settings::QUEUE##QueueID ].Text            = "Empty";\
+        WidgetDatas[ Settings::QUEUE##QueueID ].ImageName       = GetImageName( nullptr );\
+        WidgetDatas[ Settings::QUEUE##QueueID ].ImagePosX       = Settings::QUEUE##ImagePosX;\
+        WidgetDatas[ Settings::QUEUE##QueueID ].ImagePosY       = Settings::QUEUE##ImagePosY;\
+        WidgetDatas[ Settings::QUEUE##QueueID ].TextPosX        = Settings::QUEUE##TextPosX;\
+        WidgetDatas[ Settings::QUEUE##QueueID ].TextPosY        = Settings::QUEUE##TextPosY;\
+        WidgetDatas[ Settings::QUEUE##QueueID ].ImageZoomX      = Settings::DefaultImageZoom;\
+        WidgetDatas[ Settings::QUEUE##QueueID ].ImageZoomY      = Settings::DefaultImageZoom;\
+        WidgetDatas[ Settings::QUEUE##QueueID ].TextFontSize    = Settings::DefaultTextFontSize;
 
     const char* GetWeaponImageName( const RE::TESObjectWEAP* _weapon )
     {
@@ -457,19 +465,10 @@ namespace Utils
     {
         auto filter = []( RE::TESForm& _obj )
         {
-            if ( _obj.formType == RE::FormType::Weapon )
-            {
+            if ( _obj.formType == RE::FormType::Weapon || _obj.formType == RE::FormType::Ammo || _obj.formType == RE::FormType::Scroll )
                 return true;
-            }
             else if ( _obj.formType == RE::FormType::Armor )
-            {
-                RE::TESObjectARMO* armor = _obj.As<RE::TESObjectARMO>();
-                return armor->IsShield();
-            }
-            else if ( _obj.formType == RE::FormType::Ammo )
-                return true;
-            else if ( _obj.formType == RE::FormType::Scroll )
-                return true;
+                return _obj.As<RE::TESObjectARMO>()->IsShield();
             else
                 return false;
         };
@@ -646,6 +645,10 @@ namespace Queues
                 auto beginIt = m_queue.begin();
                 size_t offset = m_markedObject - &(*beginIt);
                 m_queue.erase( beginIt + offset );
+
+                if ( m_markedObjectIndex == m_currentIndex )
+                    unequipCurrent();
+
                 if ( m_markedObjectIndex <= m_currentIndex && m_currentIndex >= 1 )
                     --m_currentIndex;
 
@@ -709,8 +712,12 @@ namespace Queues
                     {
                         advance();
                         // this condition will be triggered if we made a full cycle over the queue in this while loop
+                        //full cycle over the queue within this loop is possible when all the items from the queue are absent in our inventory
                         if ( index == m_currentIndex )
+                        {
+                            m_currentIndex = 0;
                             break;
+                        }
                     }
                 }
                 else if ( Utils::IsEquipableSpell( object ) )
@@ -768,22 +775,6 @@ namespace Queues
             else
                 Utils::PoisonEquippedWeapon( potion );
         }
-
-        //void removeAt( int _index )
-        //{
-        //    if ( m_queue.size() <= 1 )
-        //        return;
-
-        //    size_t uIndex = _index;
-
-        //    if ( uIndex >= m_queue.size() )
-        //        return;
-
-        //    if ( uIndex != 0 && m_currentIndex <= uIndex )
-        //        --m_currentIndex;
-
-        //    //m_queue.erase( m_queue.begin() + uIndex );
-        //}
 
     private:
 
@@ -872,46 +863,6 @@ namespace Queues
 
     Queue Queues[ Settings::GetQueuesCount() ];
 
-    // -1 - removed;
-    //  0 - nothing;
-    //  1 - added;
-    int QueueUnqueueFromInventoryMenu( Queue& _queue )
-    {
-        RE::InventoryMenu* inventoryMenu = GameUICache::GetOpenedMenu<RE::InventoryMenu>( RE::InventoryMenu::MENU_NAME );
-        if ( inventoryMenu )
-        {
-            RE::ItemList* itemList = inventoryMenu->GetRuntimeData().itemList;
-            RE::TESBoundObject* selectedItem = GameUICache::GetSelectedItem( itemList );
-
-            return _queue.queueUnqueue( selectedItem );
-        }
-        return 0;
-    }
-
-    // -1 - removed;
-    //  0 - nothing;
-    //  1 - added;
-    int QueueUnqueueFromMagicMenu( Queue& _queue )
-    {
-        RE::MagicMenu* magicMenu = GameUICache::GetOpenedMenu<RE::MagicMenu>( RE::MagicMenu::MENU_NAME );
-
-        if ( magicMenu )
-        {
-            RE::GFxValue result;
-            magicMenu->uiMovie->GetVariable( &result, "_root.Menu_mc.inventoryLists.itemList.selectedEntry.formId" );
-            if ( result.GetType() != RE::GFxValue::ValueType::kNumber )
-                return 0;
-
-            uint32_t selectedFormId = (uint32_t) result.GetNumber();
-            RE::TESForm* form = RE::TESForm::LookupByID( selectedFormId );
-            if ( !form )
-                return 0;
-
-            return _queue.queueUnqueue( form );
-        }
-        return 0;
-    }
-
     void Init()
     {
         Queues[ Settings::RightHandQueueID ].setType( Queue::QueueType::kRightHand );
@@ -932,33 +883,81 @@ namespace Queues
         Queues[ Settings::Potion2QueueID ].setType( Queue::QueueType::kPotion );
         Queues[ Settings::Potion2QueueID ].setID( Settings::Potion2QueueID );
     }
+}
 
-    void OnHandQueue( Queue& _queue, Queue& _oppositeQueue )
+
+namespace Utils
+{
+    // -1 - removed;
+    //  0 - nothing;
+    //  1 - added;
+    int QueueUnqueueFromInventoryMenu( Queues::Queue& _queue )
+    {
+        RE::InventoryMenu* inventoryMenu =
+            GameUICache::GetOpenedMenu<RE::InventoryMenu>( RE::InventoryMenu::MENU_NAME );
+        if ( inventoryMenu )
+        {
+            RE::ItemList* itemList = inventoryMenu->GetRuntimeData().itemList;
+            RE::TESBoundObject* selectedItem = GameUICache::GetSelectedItem( itemList );
+
+            return _queue.queueUnqueue( selectedItem );
+        }
+        return 0;
+    }
+
+    // -1 - removed;
+    //  0 - nothing;
+    //  1 - added;
+    int QueueUnqueueFromMagicMenu( Queues::Queue& _queue )
+    {
+        RE::MagicMenu* magicMenu = GameUICache::GetOpenedMenu<RE::MagicMenu>( RE::MagicMenu::MENU_NAME );
+
+        if ( magicMenu )
+        {
+            RE::GFxValue result;
+            magicMenu->uiMovie->GetVariable( &result, "_root.Menu_mc.inventoryLists.itemList.selectedEntry.formId" );
+            if ( result.GetType() != RE::GFxValue::ValueType::kNumber )
+                return 0;
+
+            uint32_t selectedFormId = (uint32_t) result.GetNumber();
+            RE::TESForm* form = RE::TESForm::LookupByID( selectedFormId );
+            if ( !form )
+                return 0;
+
+            return _queue.queueUnqueue( form );
+        }
+        return 0;
+    }
+
+
+    void UpdateWidgetData( Queues::Queue& _queue )
+    {
+        RE::TESForm* object = _queue.getCurrent();
+        Widgets::WidgetDatas[ _queue.getID() ].ImageName = Widgets::GetImageName( object );
+        Widgets::WidgetDatas[ _queue.getID() ].Text = object ? object->GetName() : "Empty";
+        Widgets::SendEvent( _queue.getID() );
+    }
+
+    void OnHandQueue( Queues::Queue& _queue, Queues::Queue& _oppositeQueue )
     {
         if ( GameUICache::IsMenuOpened( RE::InventoryMenu::MENU_NAME ) )
         {
-            int result = Queues::QueueUnqueueFromInventoryMenu( _queue );
+            int result = QueueUnqueueFromInventoryMenu( _queue );
 
             if ( result == -1 )
             {
-                RE::TESForm* object = _queue.getCurrent();
                 _queue.equipCurrent();
-                Widgets::WidgetDatas[ _queue.getID() ].ImageName = Widgets::GetImageName( object );
-                Widgets::WidgetDatas[ _queue.getID() ].Text = object ? object->GetName() : "Empty";
-                Widgets::SendEvent( _queue.getID() );
+                UpdateWidgetData( _queue );
             }
         }
         else if ( GameUICache::IsMenuOpened( RE::MagicMenu::MENU_NAME ) )
         {
-            int result = Queues::QueueUnqueueFromMagicMenu( _queue );
+            int result = QueueUnqueueFromMagicMenu( _queue );
 
             if ( result == -1 )
             {
-                RE::TESForm* object = _queue.getCurrent();
                 _queue.equipCurrent();
-                Widgets::WidgetDatas[ _queue.getID() ].ImageName = Widgets::GetImageName( object );
-                Widgets::WidgetDatas[ _queue.getID() ].Text = object ? object->GetName() : "Empty";
-                Widgets::SendEvent( _queue.getID() );
+                UpdateWidgetData( _queue );
             }
         }
         else if ( GameUICache::UI->menuStack.size() == GameUICache::DefaultMenusCount )
@@ -968,25 +967,8 @@ namespace Queues
                 _oppositeQueue.unequipCurrent();
 
             _queue.equipNext();
-
-            RE::TESForm* current = _queue.getCurrent();
-
-            Widgets::WidgetDatas[ _queue.getID() ].ImageName = Widgets::GetImageName( current );
-            Widgets::WidgetDatas[ _queue.getID() ].Text = current ? current->GetName() : "Empty";
-            Widgets::SendEvent( _queue.getID() );
+            UpdateWidgetData( _queue );
         }
-    }
-}
-
-
-namespace Utils
-{
-    void UpdateWidgetData( Queues::Queue& _queue )
-    {
-        RE::TESForm* object = _queue.getCurrent();
-        Widgets::WidgetDatas[ _queue.getID() ].ImageName = Widgets::GetImageName( object );
-        Widgets::WidgetDatas[ _queue.getID() ].Text = object ? object->GetName() : "Empty";
-        Widgets::SendEvent( _queue.getID() );
     }
 }
 
@@ -1013,14 +995,14 @@ public:
 
         if ( buttonEvent->GetIDCode() == Settings::QueuesRotationKeys[ Settings::RightHandQueueID ] && buttonEvent->IsDown() )
         {
-            Queues::OnHandQueue(
+            Utils::OnHandQueue(
                     Queues::Queues[ Settings::RightHandQueueID ]
                 ,   Queues::Queues[ Settings::LeftHandQueueID  ]
             );
         }
         else if ( buttonEvent->GetIDCode() == Settings::QueuesRotationKeys[ Settings::LeftHandQueueID ] && buttonEvent->IsDown() )
         {
-            Queues::OnHandQueue(
+            Utils::OnHandQueue(
                     Queues::Queues[ Settings::LeftHandQueueID  ]
                 ,   Queues::Queues[ Settings::RightHandQueueID ]
             );
@@ -1030,7 +1012,7 @@ public:
             Queues::Queue& queue = Queues::Queues[ Settings::ShoutPowerQueueID ];
             if ( GameUICache::IsMenuOpened( RE::MagicMenu::MENU_NAME ) )
             {
-                int result = Queues::QueueUnqueueFromMagicMenu( queue );
+                int result = Utils::QueueUnqueueFromMagicMenu( queue );
                 if ( result == -1 )
                 {
                     queue.equipCurrent();
@@ -1048,7 +1030,7 @@ public:
             Queues::Queue& queue = Queues::Queues[ Settings::AmmoQueueID ];
             if ( GameUICache::IsMenuOpened( RE::InventoryMenu::MENU_NAME ) )
             {
-                int result = Queues::QueueUnqueueFromInventoryMenu( queue );
+                int result = Utils::QueueUnqueueFromInventoryMenu( queue );
                 if ( result == -1 )
                 {
                     queue.equipCurrent();
@@ -1066,7 +1048,7 @@ public:
             Queues::Queue& queue = Queues::Queues[ Settings::Potion1QueueID ];
             if ( GameUICache::IsMenuOpened( RE::InventoryMenu::MENU_NAME ) )
             {
-                int result = Queues::QueueUnqueueFromInventoryMenu( queue );
+                int result = Utils::QueueUnqueueFromInventoryMenu( queue );
                 if ( result == -1 )
                 {
                     Utils::UpdateWidgetData( queue );
@@ -1083,7 +1065,7 @@ public:
             Queues::Queue& queue = Queues::Queues[ Settings::Potion2QueueID ];
             if ( GameUICache::IsMenuOpened( RE::InventoryMenu::MENU_NAME ) )
             {
-                int result = Queues::QueueUnqueueFromInventoryMenu( queue );
+                int result = Utils::QueueUnqueueFromInventoryMenu( queue );
                 if ( result == -1 )
                 {
                     Utils::UpdateWidgetData( queue );
@@ -1106,8 +1088,6 @@ public:
 
         return RE::BSEventNotifyControl::kContinue;
     }
-
-private:
 };
 
 KeyEventSink KESink;
@@ -1260,6 +1240,34 @@ namespace Papyrus
         Widgets::SendEvent( _queueId );
     }
 
+
+    int GetImageZoomX( RE::StaticFunctionTag*, int _queueId )
+    {
+        return Widgets::WidgetDatas[ _queueId ].ImageZoomX;
+    }
+    void SetImageZoomX( RE::StaticFunctionTag*, int _queueId, int _zoomX )
+    {
+        Widgets::WidgetDatas[ _queueId ].ImageZoomX = _zoomX;
+    }
+
+    int GetImageZoomY( RE::StaticFunctionTag*, int _queueId )
+    {
+        return Widgets::WidgetDatas[ _queueId ].ImageZoomY;
+    }
+    void SetImageZoomY( RE::StaticFunctionTag*, int _queueId, int _zoomY )
+    {
+        Widgets::WidgetDatas[ _queueId ].ImageZoomY = _zoomY;
+    }
+
+    int GetTextFontSize( RE::StaticFunctionTag*, int _queueId )
+    {
+        return Widgets::WidgetDatas[ _queueId ].TextFontSize;
+    }
+    void SetTextFontSize( RE::StaticFunctionTag*, int _queueId, int _fontSize )
+    {
+        Widgets::WidgetDatas[ _queueId ].TextFontSize = _fontSize;
+    }
+
     bool RegisterPapyrusFunctions( RE::BSScript::IVirtualMachine* _vm )
     {
         _vm->RegisterFunction( "PoisonWeapon", "EQ_Utils", PoisonWeapon );
@@ -1295,6 +1303,14 @@ namespace Papyrus
         _vm->RegisterFunction( "SetiWantWidgetTextID", "EQ_Utils", SetiWantWidgetTextID );
 
         _vm->RegisterFunction( "UpdateWidgetData", "EQ_Utils", UpdateWidgetData );
+
+        _vm->RegisterFunction( "GetImageZoomX", "EQ_Utils", GetImageZoomX );
+        _vm->RegisterFunction( "SetImageZoomX", "EQ_Utils", SetImageZoomX );
+        _vm->RegisterFunction( "GetImageZoomY", "EQ_Utils", GetImageZoomY );
+        _vm->RegisterFunction( "SetImageZoomY", "EQ_Utils", SetImageZoomY );
+
+        _vm->RegisterFunction( "GetTextFontSize", "EQ_Utils", GetTextFontSize );
+        _vm->RegisterFunction( "SetTextFontSize", "EQ_Utils", SetTextFontSize );
 
         return true;
     }
