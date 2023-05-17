@@ -1,7 +1,10 @@
 //TODO:
 //add more images
+//reset option for the widgets
 //unequip item when removing if this is the current item in the queue; - done
 //when items are removed from the invetory we still cycle over the queue instead of doing nothing - done
+
+//EquipSpell and EquipShout functions should be same as EquipItem;
 
 //implement saves
 
@@ -25,8 +28,8 @@ namespace Utils
     RE::BGSEquipSlot* GetSlotForLeftHand( const RE::TESForm* );
 
     int EquipItem( RE::TESForm*, const RE::BGSEquipSlot* );
-    void EquipSpell( RE::TESForm*, const RE::BGSEquipSlot* );
-    void EquipShout( RE::TESForm*s );
+    int EquipSpell( RE::TESForm*, const RE::BGSEquipSlot* );
+    int EquipShout( RE::TESForm*s );
 
     void PoisonWeapon( RE::TESObjectWEAP* _weapon, RE::AlchemyItem* );
     void PoisonEquippedWeapon( RE::AlchemyItem* );
@@ -249,7 +252,15 @@ namespace Widgets
             return "equip/broad-dagger.dds";
 
         if ( _weapon->IsOneHandedAxe() )
+        {
+            if ( strstr( _weapon->GetName(), "Woodcutter" ) )
+                return "equip/wood-axe.dds";
+
+            if ( strstr( _weapon->GetName(), "Pickaxe" ) )
+                return "equip/war-pick.dds";
+
             return "equip/fire-axe.dds";
+        }
 
         if ( _weapon->IsOneHandedMace() )
             return "equip/flanged-mace.dds";
@@ -268,7 +279,10 @@ namespace Widgets
         if ( _weapon->IsCrossbow() )
             return "equip/crossbow.dds";
 
-        return "equip/wood-axe.dds";
+        if ( _weapon->IsStaff() )
+            return "equip/wizard-staff.dds";
+
+        return "equip/cube.dds";
     }
     
     const char* GetImageName( const RE::TESForm* _object )
@@ -281,6 +295,21 @@ namespace Widgets
 
         if ( _object->IsArmor() )
             return Utils::IsShield( _object ) ? "equip/round-shield.dds" : "equip/cube.dds";
+
+        if ( _object->Is( RE::FormType::Scroll ) )
+            return "equip/tied-scroll.dds";
+
+        if ( _object->Is( RE::FormType::Ammo ) )
+            return "equip/arrow.dds";
+
+        if ( _object->Is( RE::FormType::Shout ) )
+            return "equip/shouting.dds";
+
+        if ( _object->Is( RE::FormType::AlchemyItem ) )
+            return "equip/round-potion.dds";
+
+        if ( _object->Is( RE::FormType::Spell ) )
+            return "equip/secret-book.dds";
 
         return "equip/cube.dds";
     }
@@ -493,25 +522,31 @@ namespace Utils
         return 1;
     }
 
-    void EquipSpell( RE::TESForm* _object, const RE::BGSEquipSlot* _slot )
+    // -1 - not equipped
+    // 1 - equipped
+    int EquipSpell( RE::TESForm* _object, const RE::BGSEquipSlot* _slot )
     {
         RE::SpellItem* spell = _object->As<RE::SpellItem>();
         RE::BSTSmallArray<RE::SpellItem*>& playerSpells = GameDataCache::Player->GetActorRuntimeData().addedSpells;
         if ( !std::find( playerSpells.begin(), playerSpells.end(), spell ) )
-            return;
+            return -1;
 
         GameDataCache::EquipManager->EquipSpell( GameDataCache::Player, spell, _slot );
+        return 1;
     }
 
-    void EquipShout( RE::TESForm* _object )
+    // -1 - not equipped
+    // 1 - equipped
+    int EquipShout( RE::TESForm* _object )
     {
         RE::TESShout* shout = _object->As<RE::TESShout>();
         RE::TESWordOfPower* word = shout->variations[ 0 ].word;
 
         if ( !word->GetKnown() )
-            return;
+            return -1;
 
         GameDataCache::EquipManager->EquipShout( GameDataCache::Player, shout );
+        return 1;
     }
 
 
@@ -701,24 +736,31 @@ namespace Queues
 
             RE::BGSEquipSlot* slot = getSlot( object );
 
+            //I'm not sure how to name this function, so I will keep it as lamba here as for now;
+            auto equipItem = [ object, slot, this ]()
+            {
+                size_t index = m_currentIndex;
+                while ( Utils::EquipItem( object, slot ) == -1 )
+                {
+                    advance();
+                    // this condition will be triggered if we made a full cycle over the queue in this while loop
+                    // full cycle over the queue within this loop is possible when all the items from the queue are
+                    // absent in our inventory
+                    if ( index == m_currentIndex )
+                    {
+                        m_currentIndex = 0;
+                        break;
+                    }
+                }
+            };
+
             switch ( m_type )
             {
             case Queues::Queue::QueueType::kRightHand:
             case Queues::Queue::QueueType::kLeftHand:
                 if ( Utils::IsEquipableItem( object ) )
                 {
-                    size_t index = m_currentIndex;
-                    while ( Utils::EquipItem( object, slot ) == -1 )
-                    {
-                        advance();
-                        // this condition will be triggered if we made a full cycle over the queue in this while loop
-                        //full cycle over the queue within this loop is possible when all the items from the queue are absent in our inventory
-                        if ( index == m_currentIndex )
-                        {
-                            m_currentIndex = 0;
-                            break;
-                        }
-                    }
+                    equipItem();
                 }
                 else if ( Utils::IsEquipableSpell( object ) )
                     Utils::EquipSpell( object, slot );
@@ -730,7 +772,7 @@ namespace Queues
                     Utils::EquipShout( object );
                 break;
             case Queues::Queue::QueueType::kAmmo:
-                Utils::EquipItem( object, slot );
+                equipItem();
                 break;
             }
         }
